@@ -1,0 +1,99 @@
+apiVersion: cluster.shturval.tech/v1beta1
+kind: ClusterConfig
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Name }}
+  labels:
+    {{- include "capvcd-cluster.labels" . | nindent 4 }}
+spec:
+  clusterName: {{ .Release.Name }}
+  clusterProfileName: {{ .Values.clusterConfigProfileName | default "default-client-cluster-profile" }}
+  clusterType: {{ .Values.clusterType | default "client" }}
+  deployKeepAlived: {{ not .Values.useExternalKubeAPILB }}
+  license: {{ .Values.licensetoken | quote }}
+  releaseVersion: {{ .Values.shturvalReleaseVersion | quote }}
+  secure: {{ .Values.secure }}
+  systemRegistryConfig:
+    commonUrl: {{ .Values.systemregistry | quote }}
+  ntpConfig:
+    {{- with .Values.ntp.ntpservers }}
+    ntpServers:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    timeZone: {{ .Values.ntp.timezone | quote }}
+  systemServicesConfig:
+    ccm:
+      providerSecretRef:
+        name: {{ include "capvcd-cluster.identitySecretName" . | quote }}
+        namespace: {{ .Values.capvcd.credentialsNamespace | default "capvcd-system" | quote }}
+    csi:
+    {{- if .Values.csi }}
+    {{- range .Values.csi }}
+    - defaultStorageClass: {{ .defaultStorageClass | default true }}
+      serviceConfigName: {{ .serviceConfigName | quote }}
+      {{- with .providerSecretRef }}
+      providerSecretRef:
+        name: {{ .name | quote }}
+        namespace: {{ .namespace | quote }}
+      {{- end }}
+    {{- end }}
+    {{- else if .Values.capvcd.enableCSI }}
+    - defaultStorageClass: true
+      serviceConfigName: shturval-capvcd-csi
+      providerSecretRef:
+        name: vcd-csi-config
+        namespace: {{ .Release.Name | quote }}
+    {{- else }}
+    - defaultStorageClass: true
+      serviceConfigName: shturval-local-csi
+    {{- end }}
+    enabledServices:
+    {{- range .Values.services.enabledservices }}
+    {{- /* При CAPVCD CSI не ставим rawfile (local-csi) через enabledServices */ -}}
+    {{- if or (not $.Values.capvcd.enableCSI) (ne . "shturval-local-csi") }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    disabledServices:
+    {{- $disabled := .Values.services.disablesservices | default list }}
+    {{- if and .Values.capvcd.enableCSI (not (has "shturval-local-csi" $disabled)) }}
+    {{- $disabled = append $disabled "shturval-local-csi" }}
+    {{- end }}
+    {{- range $disabled }}
+    - {{ . | quote }}
+    {{- end }}
+    ingress:
+      defaultIngressFQDN: {{ printf "*.%s" .Values.ingress | quote }}
+      {{- if and .Values.ingressVip (not .Values.useExternalIngressLB) }}
+      ingressVIP: {{ .Values.ingressVip | quote }}
+      {{- end }}
+      setupVIP: {{ not .Values.useExternalIngressLB }}
+      {{- if .Values.ingressCert }}
+      wildcardCert:
+        ingresscert: {{ .Values.ingressCert | quote }}
+        ingresskey: {{ .Values.ingressKey | quote }}
+      {{- end }}
+      {{- with .Values.acme }}
+      acmeConfig:
+        acmeserverurl: {{ .serverURL | quote }}
+        {{- with .rootCABundle }}
+        acmerootcabundle: {{ . | quote }}
+        {{- end }}
+        {{- with .rootCA }}
+        acmerootca: {{ . | quote }}
+        {{- end }}
+        {{- with .email }}
+        email: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+    loggingConfig:
+      {{- with .Values.logsMgmtIngress }}
+      loggingUrl: {{ . | quote }}
+      {{- end }}
+    monitoringConfig:
+      monitoringId: {{ include "capvcd-cluster.monitoringid" . | quote }}
+      {{- with .Values.metricsMgmtIngress }}
+      monitoringUrl: {{ . | quote }}
+      {{- end }}

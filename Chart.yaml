@@ -1,0 +1,15 @@
+apiVersion: v2
+name: capvcd-cluster
+description: Helm-чарт для развёртывания Cluster API-кластера на провайдере VMware Cloud Director (CAPVCD) + Shturval ClusterConfig
+type: application
+version: 0.2.0
+appVersion: "2.14.0"
+dependencies:
+  - name: capsm-cluster-vm
+    alias: capvcd-cluster-vm
+    repository: capsm-cluster-vm
+    condition: capvcd-cluster-vm.enable
+  - name: capsm-cluster-grafana
+    alias: capvcd-cluster-grafana
+    repository: capsm-cluster-grafana
+    condition: capvcd-cluster-grafana.enable

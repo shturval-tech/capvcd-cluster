@@ -1,0 +1,268 @@
+# Лицензия Штурвала
+licensetoken: "XXXXXXXX"
+# Имя хоста с зеркалом Штурвала
+systemregistry: myregistry.domain.tld
+nameOverride: ""
+
+# shturvalReleaseVersion: 2.11.0
+# kubeVersion: 1.33.1
+# shturvalReleaseVersion: 2.12.1
+# kubeVersion: 1.34.1
+# shturvalReleaseVersion: 2.13.1
+# kubeVersion: 1.34.3
+shturvalReleaseVersion: 2.14.0 # Версия устанавливаемого кластера Штурвал
+kubeVersion: 1.35.1 # Версия устанавливаемого кубернетеса
+
+# Актуальные образы в 2.14 для bootstrap NCI (pause) и cluster-autoscaler
+images:
+  pause: r.shturval.tech/pause:3.10.1
+  # clusterAutoscaler: r.shturval.tech/autoscaling/cluster-autoscaler:v1.35.1 # по умолчанию: r.shturval.tech/autoscaling/cluster-autoscaler:v{{ kubeVersion }}
+
+services:
+  # Минимальный набор сервисов для 2.14 - значение применятся только в момент инициализации кластера и изменения ни к чему не приведут
+  enabledservices:
+  - shturval-node-config
+  - shturval-trust-manager
+  - shturval-node-config-crds
+  - shturval-snapshotter
+  - shturval-metrics-collector-crds
+  - shturval-vip-provider
+  - shturval-caching-dns
+  - shturval-vip
+  - shturval-networking
+  - shturval-policy-manager-crds
+  - shturval-cert-manager
+  - shturval-services-crds
+  - shturval-snapshotter-crds
+  - shturval-services
+  - shturval-trust-manager-crds
+  - shturval-monitoring-crds
+  - shturval-update
+  - shturval-ingress-controller
+  - shturval-local-csi
+  - shturval-update-crds
+  - shturval-cert-manager-crds
+  disablesservices:
+  - shturval-metrics-collector
+  - shturval-log-collector-crds
+  - shturval-backup
+  - shturval-scanner
+  - shturval-cd
+  - shturval-policy-manager
+  - shturval-scanner-crds
+  - shturval-rollouts
+  - shturval-cd-crds
+  - shturval-rollouts-crds
+  - shturval-gateway-api-crds
+  - shturval-descheduler
+  - shturval-backup-crds
+  - shturval-log-collector
+  - shturval-cert-expiration
+
+# Конфигурация etcd
+etcd:
+  external: {}
+    # endpoints:
+    #   - "https://10.0.0.1:2379"
+    # caCrt: "conf/ext_etcd-ca.crt"    # CA сертификат от ETCD
+    # apiCrt: "conf/ext_etcd-client.crt" # Клиентский сертификат для подключения к ETCD
+    # apiKey: "conf/ext_etcd-client.key" # Ключ от клиентского сертификата
+  local:
+    dataDir: /var/lib/etcd
+    imageTag: v3.6.7
+    # extraArgs: {}
+
+# Настройки провайдера VMware Cloud Director (CAPVCD)
+# Значения, помеченные как обязательные, нужно переопределить перед установкой реального кластера.
+capvcd:
+  createProviderConfig: true
+  credentialsNamespace: capvcd-system
+  identitySecretName: ""
+  site: "https://vcd.example.com"
+  org: ""
+  ovdc: ""
+  ovdcNetwork: ""
+  vipSubnet: ""
+  catalog: ""
+  # Имя VCD vApp template. Аннотация template.shturval.tech/<kubeVersion>
+  # формируется автоматически из template + kubeVersion.
+  template: ""
+  # Опционально: явная карта версия→template (для нескольких версий в identity Secret).
+  # Если для текущей kubeVersion ключа нет — используется capvcd.template.
+  kubeTemplates: {}
+  sizingPolicy: ""
+  sizingPolicies: []
+  placementPolicy: ""
+  storageProfile: ""
+  diskSize: "60Gi"
+  # Auth: достаточно одного варианта —
+  #   1) username + password, или
+  #   2) refreshToken (API Token из VCD UI: User preferences → Access Tokens).
+  # Можно задать оба; при наличии refreshToken CAPVCD/CCM предпочитают его.
+  username: ""
+  password: ""
+  refreshToken: ""
+  templateNetInterface: eth0
+  enableCSI: false
+  # При enableCSI=true чарт ставит shturval-capvcd-csi (+ Secret vcd-csi-config)
+  # и убирает shturval-local-csi из enabledServices.
+  allowEditCSI: "true"
+  ipPoolName: ""
+  enableNvidiaGPU: false
+  proxyConfig: {}
+
+master: # конфигурация control plane
+  replicas: 3 # кол-во мастеров
+  template: ""
+  diskSize: ""
+  sizingPolicy: ""
+  # labels:
+  #   - "my-custom-label=value"
+  # taints:
+  #   - key: mytaint/master
+  #     effect: NoSchedule
+  # MHC включён по умолчанию (как в Shturval 2.14). Отключить: enabled: false
+  machineHealthCheck:
+    enabled: true
+    # checks / remediation можно переопределить; иначе CP = 100%
+
+workerNodes: # динамическая конфигурация worker-групп
+  # Группа workers получает label node-role.kubernetes.io/workers.
+  workers: # имя группы
+    replicas: 2 # кол-во узлов в группе; при autoscaling.enabled — минимум (min-size)
+    template: ""
+    diskSize: ""
+    sizingPolicy: ""
+    # autoscaling: # автомасштабирование группы через Cluster API cluster-autoscaler
+    #   enabled: true
+    #   maxMachines: 6 # максимум узлов; минимум = replicas
+    #   # CAPVCD создаёт/удаляет VM в VCD при scale up/down.
+    #   # На management-кластере должен существовать ClusterRole shturval-cluster-autoscaler.
+    #   # При enabled чарт не пишет MachineDeployment.spec.replicas (владеет autoscaler) — иначе helm-diff/template даёт вечный drift.
+    # labels:
+    #   - "node.longhorn.io/create-default-disk=true"
+    # taints:
+    #   - key: mytaint/worker
+    #     effect: NoSchedule
+    machineHealthCheck:
+      enabled: true
+      # remediation по умолчанию: unhealthyLessThanOrEqualTo: 40%
+
+  infra: # группа infra-узлов (для сервисов мониторинга, логирования и т.п.)
+    replicas: 0
+    template: ""
+    diskSize: ""
+    sizingPolicy: ""
+    # labels:
+    #   - "my-custom-label-for-infra=myvalue"
+    # taints:
+    #   - key: mytaint/infra
+    #     effect: NoSchedule
+    machineHealthCheck:
+      enabled: true
+
+# Сеть подов в кластере
+podCIDR: 172.16.0.0/16
+# Сеть сервисов в кластере
+serviceCIDR: 10.96.0.0/12
+
+# IP/FQDN для kube-apiserver (опционально). VCD LB назначает endpoint после создания.
+clusterAPI: ""
+# Для CAPVCD API обслуживается облачным LB; keepalived/kube-vip обычно не нужны.
+useExternalKubeAPILB: true
+
+# Ингресс записи менеджмент-кластера
+authMgmtIngress: "shturval.app.mgmt.example.com"
+logsMgmtIngress: "logs.app.mgmt.example.com"
+metricsMgmtIngress: "vminsert.app.mgmt.example.com"
+
+# Ингресс запись создаваемого кластера
+ingress: "app.cluster.example.com"
+# IP адрес Ingress контроллера или внешнего балансировщика
+ingressVip: ""
+# Используется ли внешний балансировщик для Ingress
+useExternalIngressLB: true
+
+# Путь до конфигурации кластера (для shturvald и backend)
+clusterConfigFile: "conf/clusterConfig.yaml"
+
+auditPolicy:
+  # Путь до шаблона audit конфигурации
+  template: "conf/audit_policy_template.yaml"
+  # Путь расположения файла audit на master нодах
+  location: "/etc/kubernetes/audit_policy.yaml"
+
+# Kubeadm patches — патчи для компонентов control plane (kube-apiserver, etcd и любые другие).
+# Каждый ключ кроме directory — отдельный файл в каталоге патчей.
+# Обязательно: patchTemplate. Опционально: filename (для kubeapi по умолчанию kube-apiserver.yaml, иначе <ключ>.yaml).
+kubeadmPatches:
+  # Директория с патчами на узле.
+  # Рекомендуемое значение: "/etc/kubernetes/manifests-pathes"
+  directory: ""
+  # kubeapi:
+  #   patchTemplate: "conf/kube-apiserver.yaml"
+  #   resources:
+  #     limits:
+  #       memory: "1024Mi"
+  #       cpu: "2"
+  #     requests:
+  #       memory: "500Mi"
+  #       cpu: "250m"
+  # etcd:
+  #   patchTemplate: "conf/etcd.yaml"
+  #   resources:
+  #     limits:
+  #       memory: "500Mi"
+  #       cpu: "2"
+  #     requests:
+  #       memory: "500Mi"
+  #       cpu: "2"
+
+# Настройка NTP
+ntp:
+  ntpservers: []
+  timezone: Europe/Moscow
+
+# Secure installation (аудит, шифрование etcd и т.д.)
+secure: true
+
+# Пароль для подключения к opensearch (отправка логов)
+opensearchfluentbitpass: "mysecretpassword"
+
+# Сабчарт настройки VMAlert/VMRule в менеджмент-кластере под этот клиентский кластер
+capvcd-cluster-vm:
+  enable: false
+
+# Сабчарт добавления datasource этого кластера в grafana менеджмент-кластера
+capvcd-cluster-grafana:
+  enable: false
+
+# Конфигурация ClusterConfig CR
+clusterConfigProfileName: "" # имя профиля кластера (если не указан, используется default-client-cluster-profile)
+clusterType: "client" # тип кластера: client или platform (management)
+
+# Конфигурация CSI в ClusterConfig.
+# При capvcd.enableCSI=true чарт выбирает shturval-capvcd-csi; иначе shturval-local-csi.
+# Явный список csi переопределяет этот выбор.
+# csi:
+#   - defaultStorageClass: true
+#     serviceConfigName: shturval-local-csi
+#   - defaultStorageClass: false
+#     serviceConfigName: shturval-capvcd-csi
+#     providerSecretRef:
+#       name: vcd-csi-config
+#       namespace: mycluster
+
+# Конфигурация ACME для ingress сертификатов
+# acme:
+#   serverURL: "https://issuer.example.com/acme/directory"
+#   rootCABundle: "<base64>"
+#   email: "admin@example.com"
+
+# Wildcard сертификат для ingress (base64)
+# ingressCert: ""
+# ingressKey: ""
+
+# Intermediate CA для ingress (base64)
+# caCert: ""
+# caKey: ""

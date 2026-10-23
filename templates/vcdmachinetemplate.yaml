@@ -1,0 +1,25 @@
+{{- range $k, $v := .Values.workerNodes }}
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: VCDMachineTemplate
+metadata:
+  name: {{ $.Release.Name }}-{{ $k }}
+  namespace: {{ $.Release.Name }}
+  labels:
+    cluster-name: {{ $.Release.Name }}
+    cluster.x-k8s.io/cluster-name: {{ $.Release.Name }}
+    node-role.kubernetes.io/{{ include "capvcd-cluster.nodeRole" $k }}: ""
+    {{- include "capvcd-cluster.labels" $ | nindent 4 }}
+spec:
+  template:
+    spec:
+      {{- $template := $v.template | default (include "capvcd-cluster.defaultTemplate" $) }}
+      {{- $diskSize := $v.diskSize | default $.Values.capvcd.diskSize }}
+      {{- $sizingPolicy := $v.sizingPolicy | default $.Values.capvcd.sizingPolicy }}
+      {{- include "capvcd-cluster.vcdmachine.spec" (dict
+        "root" $
+        "template" $template
+        "diskSize" $diskSize
+        "sizingPolicy" $sizingPolicy
+      ) | nindent 6 }}
+---
+{{- end }}

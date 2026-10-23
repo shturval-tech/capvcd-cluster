@@ -1,0 +1,42 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: VCDCluster
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Name }}
+  labels:
+    cluster.x-k8s.io/cluster-name: {{ .Release.Name | quote }}
+    {{- include "capvcd-cluster.labels" . | nindent 4 }}
+spec:
+  site: {{ required "capvcd.site is required" .Values.capvcd.site | quote }}
+  org: {{ required "capvcd.org is required" .Values.capvcd.org | quote }}
+  ovdc: {{ required "capvcd.ovdc is required" .Values.capvcd.ovdc | quote }}
+  ovdcNetwork: {{ required "capvcd.ovdcNetwork is required" .Values.capvcd.ovdcNetwork | quote }}
+  useAsManagementCluster: false
+  userContext:
+    secretRef:
+      name: {{ include "capvcd-cluster.identitySecretName" . }}
+      namespace: {{ .Release.Name }}
+  loadBalancerConfigSpec:
+    {{- if .Values.capvcd.vipSubnet }}
+    vipSubnet: {{ .Values.capvcd.vipSubnet | quote }}
+    {{- end }}
+  {{- if .Values.clusterAPI }}
+  controlPlaneEndpoint:
+    host: {{ .Values.clusterAPI }}
+    port: 6443
+  {{- end }}
+  {{- $proxy := .Values.capvcd.proxyConfig | default dict }}
+  {{- if or $proxy.httpProxy $proxy.httpsProxy $proxy.noProxy }}
+  proxyConfigSpec:
+    {{- if $proxy.httpProxy }}
+    httpProxy: {{ $proxy.httpProxy | quote }}
+    {{- end }}
+    {{- if $proxy.httpsProxy }}
+    httpsProxy: {{ $proxy.httpsProxy | quote }}
+    {{- end }}
+    {{- if $proxy.noProxy }}
+    noProxy: {{ $proxy.noProxy | quote }}
+    {{- end }}
+  {{- else }}
+  proxyConfigSpec: {}
+  {{- end }}
