@@ -85,9 +85,18 @@ Cached in Values._encryptionKey for one helm render so Secret and NCI always mat
 {{- $secretName := printf "%s-encryption-configuration" .Release.Name -}}
 {{- $existing := lookup "v1" "Secret" .Release.Name $secretName -}}
 {{- if and $existing $existing.data $existing.data.secret -}}
+{{- /* Существующий ключ не пересчитываем. */ -}}
 {{- $key = index $existing.data "secret" | b64dec -}}
+{{- else if .Values.etcd.encryptionSeed -}}
+{{- $key = sha256sum (printf "%s:%s-encryption-key" (toString .Values.etcd.encryptionSeed) .Release.Name) | trunc 32 -}}
 {{- else -}}
+{{- $cc := lookup "cluster.shturval.tech/v1beta1" "ClusterConfig" .Release.Name .Release.Name -}}
+{{- if and $cc $cc.spec -}}
+{{- /* Апгрейд существующего кластера: ключ не меняем. */ -}}
 {{- $key = sha256sum (printf "%s-encryption-key" .Release.Name) | trunc 32 -}}
+{{- else -}}
+{{- fail (printf "новый кластер %s: задайте etcd.encryptionSeed в values (случайная строка, например `openssl rand -base64 32`). Без seed шифрование etcd не будет безопасным." .Release.Name) -}}
+{{- end -}}
 {{- end -}}
 {{- $_ := set .Values "_encryptionKey" $key -}}
 {{- end -}}
@@ -229,7 +238,7 @@ scheduler:
 Normalized kubeVersion as vX.Y.Z (for kubeTemplates keys / template.shturval.tech/*).
 */}}
 {{- define "capvcd-cluster.kubeVersionKey" -}}
-{{- printf "v%s" (trimPrefix "v" (.Values.kubeVersion | toString | trim)) -}}
+{{- printf "v%s" (trimPrefix "v" (include "capvcd-cluster.effectiveKubeVersion" . | toString | trim)) -}}
 {{- end }}
 
 {{/*
