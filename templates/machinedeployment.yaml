@@ -61,6 +61,6 @@ spec:
         apiGroup: infrastructure.cluster.x-k8s.io
         kind: VCDMachineTemplate
         name: {{ $.Release.Name }}-{{ $name }}
-      version: v{{ $.Values.kubeVersion }}
+      version: v{{ include "capvcd-cluster.effectiveKubeVersion" $ }}
 ---
 {{- end }}

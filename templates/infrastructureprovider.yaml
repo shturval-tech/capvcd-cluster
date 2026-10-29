@@ -1,0 +1,71 @@
+{{- $mode := "auto" -}}
+{{- if .Values.infrastructureProvider -}}
+{{- $mode = .Values.infrastructureProvider.create | default "auto" | toString -}}
+{{- end -}}
+{{- $hasCRD := .Capabilities.APIVersions.Has "cluster.shturval.tech/v1beta1/InfrastructureProvider" -}}
+{{- $want := or (eq $mode "true") (and (eq $mode "auto") $hasCRD) -}}
+{{- if and $want .Values.capvcd.createProviderConfig -}}
+{{- $name := include "capvcd-cluster.identitySecretName" . -}}
+{{- $ns := .Values.capvcd.credentialsNamespace | default "capvcd-system" -}}
+{{- $found := lookup "cluster.shturval.tech/v1beta1" "InfrastructureProvider" $ns $name -}}
+{{- $owner := "" -}}
+{{- if and $found $found.metadata $found.metadata.annotations -}}
+{{- $owner = index $found.metadata.annotations "meta.helm.sh/release-name" | default "" -}}
+{{- end -}}
+{{- if or (not (and $found $found.metadata)) (eq $owner .Release.Name) }}
+{{- $ver := include "capvcd-cluster.kubeVersionKey" . -}}
+{{- $templates := .Values.capvcd.kubeTemplates | default dict -}}
+apiVersion: cluster.shturval.tech/v1beta1
+kind: InfrastructureProvider
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "capvcd-cluster.labels" . | nindent 4 }}
+spec:
+  type: capcd
+  allowEditCSI: {{ eq (toString .Values.capvcd.allowEditCSI) "true" }}
+  {{- with .Values.capvcd.ipPoolName }}
+  ipAddressPoolName: {{ . | quote }}
+  {{- end }}
+  templates:
+  {{- range $kubeVersion, $templateName := $templates }}
+  - kubeVersion: {{ $kubeVersion | quote }}
+    template: {{ $templateName | quote }}
+    templateNetInterface: {{ $.Values.capvcd.templateNetInterface | default "eth0" | quote }}
+  {{- end }}
+  {{- if and .Values.capvcd.template (not (get $templates $ver)) }}
+  - kubeVersion: {{ $ver | quote }}
+    template: {{ .Values.capvcd.template | quote }}
+    templateNetInterface: {{ .Values.capvcd.templateNetInterface | default "eth0" | quote }}
+  {{- end }}
+  providerRef:
+    apiVersion: v1
+    kind: Secret
+    name: {{ $name }}
+    namespace: {{ $ns }}
+  config:
+    site: {{ .Values.capvcd.site | quote }}
+    org: {{ .Values.capvcd.org | quote }}
+    ovdc: {{ .Values.capvcd.ovdc | quote }}
+    network: {{ .Values.capvcd.ovdcNetwork | quote }}
+    vipSubnet: {{ .Values.capvcd.vipSubnet | quote }}
+    catalog: {{ .Values.capvcd.catalog | quote }}
+    {{- with .Values.capvcd.placementPolicy }}
+    placementPolicy: {{ . | quote }}
+    {{- end }}
+    {{- $policies := .Values.capvcd.sizingPolicies | default (list) -}}
+    {{- if and (eq (len $policies) 0) .Values.capvcd.sizingPolicy }}
+    {{- $policies = list .Values.capvcd.sizingPolicy }}
+    {{- end }}
+    {{- if $policies }}
+    sizingPolicies:
+    {{- range $policies }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.capvcd.storageProfile }}
+    storageProfile: {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
